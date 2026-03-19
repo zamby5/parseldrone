@@ -1,0 +1,8 @@
+{
+  "name": "turyap-queen-parsel-sim",
+  "version": "2.5.0",
+  "description": "TKGM MEGSIS API Vercel Proxy",
+  "dependencies": {
+    "axios": "^1.6.8"
+  }
+}
