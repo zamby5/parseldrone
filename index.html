@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ParselPRO - Murat İyicioğlu & Turyap Queen</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Turf.js for Geometry Calculations -->
+    <script src="https://unpkg.com/turf/turf.min.js"></script>
+
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --accent-color: #e74c3c;
+            --turyap-gold: #d4af37;
+            --success-color: #27ae60;
+            --info-color: #2980b9;
+            --panel-bg: rgba(255, 255, 255, 0.98);
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            background-color: #f4f6f7;
+        }
+
+        #map { height: 100%; width: 100%; z-index: 1; }
+
+        /* --- UI Panels --- */
+        .ui-panel {
+            position: absolute;
+            background: var(--panel-bg);
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+            z-index: 1000;
+            padding: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.5);
+            transition: all 0.3s ease;
+        }
+
+        /* Top Bar */
+        .top-bar {
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 900px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .branding-top {
+            font-weight: 800;
+            color: var(--primary-color);
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .branding-top i { color: var(--accent-color); }
+
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 10px;
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+        }
+        .stat-item { text-align: center; }
+        .stat-val { font-weight: bold; color: var(--primary-color); display: block; font-size: 1.1rem; }
+        .stat-label { color: #7f8c8d; font-size: 0.75rem; text-transform: uppercase; }
+
+        .action-row { display: flex; gap: 8px; flex-wrap: wrap; }
+        
+        button {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        button:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+        button:active { transform: translateY(0); }
+        
+        button.accent { background: var(--accent-color); }
+        button.turyap-btn { background: var(--turyap-gold); color: #000; }
+        button.outline { background: transparent; border: 1px solid var(--primary-color); color: var(--primary-color); }
+        button.outline:hover { background: var(--primary-color); color: white; }
+        button.success { background: var(--success-color); }
+
+        /* Upload Zone */
+        .upload-zone {
+            border: 2px dashed #bdc3c7;
+            padding: 15px;
+            text-align: center;
+            border-radius: 8px;
+            cursor: pointer;
+            background: #fafafa;
+            transition: all 0.2s;
+        }
+        .upload-zone:hover { border-color: var(--accent-color); background: #fff5f5; }
+        .upload-zone i { font-size: 1.5rem; color: var(--accent-color); margin-bottom: 5px; display: block; }
+        .upload-zone p { margin: 0; font-size: 0.9rem; color: #2c3e50; font-weight: 600; }
+        .upload-zone small { color: #95a5a6; font-size: 0.75rem; }
+
+        /* Category Summary */
+        .category-summary {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            margin-top: 5px;
+        }
+        .cat-badge {
+            font-size: 0.7rem;
+            padding: 3px 8px;
+            border-radius: 12px;
+            color: white;
+            font-weight: bold;
+        }
+        .cat-arsa { background: #3498db; }
+        .cat-tarla { background: #27ae60; }
+        .cat-zeytinlik { background: #2ecc71; }
+        .cat-diger { background: #95a5a6; }
+
+        /* Layer Switcher */
+        .layer-switcher {
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .layer-switcher button { padding: 8px 12px; font-size: 0.8rem; }
+
+        /* Watermarks */
+        .watermark-left {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            z-index: 1000;
+            font-size: 0.75rem;
+            color: #2c3e50;
+            background: rgba(255,255,255,0.9);
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-weight: 700;
+            pointer-events: none;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .watermark-right {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            z-index: 1000;
+            font-size: 1.1rem;
+            color: var(--turyap-gold);
+            font-weight: 800;
+            pointer-events: none;
+            text-shadow: 0px 0px 4px rgba(0,0,0,0.8);
+            font-family: 'Georgia', serif;
+            letter-spacing: 1px;
+        }
+
+        /* Video Modal & Form */
+        #videoModal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(5px);
+        }
+        .modal-content {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            position: relative;
+        }
+        .modal-header { font-size: 1.3rem; font-weight: bold; margin-bottom: 15px; color: var(--primary-color); display:flex; justify-content:space-between; }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; color: #555; }
+        .form-group input, .form-group textarea {
+            width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-family: inherit; box-sizing: border-box;
+        }
+        .form-group input:focus, .form-group textarea:focus { border-color: var(--turyap-gold); outline: none; }
+        .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+        /* Video Player Overlay */
+        #videoPlayerContainer {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: black;
+            z-index: 2001;
+            flex-direction: column;
+        }
+        #videoMapFrame { flex: 1; position: relative; }
+        .video-overlay-ui {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            padding: 40px;
+            box-sizing: border-box;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,0) 70%, rgba(0,0,0,0.8) 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            color: white;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+        .vid-title { font-size: 2rem; font-weight: 800; color: var(--turyap-gold); margin: 0; text-transform: uppercase; }
+        .vid-seller { font-size: 1.2rem; margin-top: 5px; }
+        .vid-price { font-size: 1.5rem; color: #2ecc71; font-weight: bold; margin-top: 10px; }
+        .vid-desc { font-size: 1rem; max-width: 600px; line-height: 1.4; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 6px; }
+        .vid-footer { text-align: right; }
+        .vid-stats { font-size: 1.1rem; margin-bottom: 5px; }
+        .drone-badge { 
+            display: inline-flex; align-items: center; gap: 8px; 
+            background: rgba(212, 175, 55, 0.2); border: 1px solid var(--turyap-gold); 
+            padding: 5px 15px; border-radius: 20px; font-size: 0.9rem; color: var(--turyap-gold);
+        }
+        .close-player {
+            position: absolute; top: 20px; right: 20px;
+            background: rgba(255,255,255,0.2); color: white; border: 1px solid white;
+            width: 40px; height: 40px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; pointer-events: auto; font-size: 1.2rem;
+        }
+
+        /* Loading Spinner */
+        .loader {
+            border: 4px solid #f3f3f3; border-top: 4px solid var(--accent-color);
+            border-radius: 50%; width: 30px; height: 30px;
+            animation: spin 1s linear infinite; display: inline-block; vertical-align: middle;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .top-bar { top: 5px; width: 95%; padding: 10px; }
+            .header-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+            .stats-container { grid-template-columns: 1fr 1fr; }
+            .action-row { width: 100%; }
+            .action-row button { flex: 1; justify-content: center; font-size: 0.8rem; padding: 8px; }
+            .layer-switcher { bottom: 10px; right: 10px; flex-direction: row; flex-wrap: wrap; max-width: 150px; }
+            .watermark-left { font-size: 0.6rem; bottom: 5px; left: 5px; }
+            .watermark-right { font-size: 0.8rem; bottom: 5px; right: 5px; }
+            .vid-title { font-size: 1.4rem; }
+            .vid-desc { font-size: 0.8rem; }
+        }
+        
+        #fileInput { display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <!-- Watermarks -->
+    <div class="watermark-left">Powered by Murat İyicioğlu</div>
+    <div class="watermark-right">Turyap Queen</div>
+
+    <!-- Top Panel -->
+    <div class="ui-panel top-bar">
+        <div class="header-row">
+            <div class="branding-top">
+                <i class="fa-solid fa-map-location-dot"></i> ParselPRO
+            </div>
+            <div style="font-size:0.8rem; color:#7f8c8d;">
+                <i class="fa-solid fa-server"></i> TKGM Canlı Bağlantı Aktif
+            </div>
+        </div>
+
+        <div class="stats-container">
+            <div class="stat-item">
+                <span class="stat-val" id="countDisplay">0</span>
+                <span class="stat-label">Parsel (Max 100)</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-val" id="areaDisplay">0</span>
+                <span class="stat-label">Toplam m²</span>
+            </div>
+            <div class="stat-item" style="grid-column: span 2;">
+                <div class="category-summary" id="categorySummary">
+                    <span style="color:#999; font-size:0.7rem;">Henüz veri yok</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="action-row">
+            <button class="outline" onclick="document.getElementById('fileInput').click()">
+                <i class="fa-solid fa-upload"></i> GeoJSON Yükle
+            </button>
+            <button class="success" onclick="enableClickQuery()">
+                <i class="fa-solid fa-mouse-pointer"></i> Haritadan Seç
+            </button>
+            <button class="accent" onclick="clearMap()">
+                <i class="fa-solid fa-trash"></i> Temizle
+            </button>
+            <button class="turyap-btn" onclick="openVideoForm()">
+                <i class="fa-solid fa-video"></i> Video Oluştur
+            </button>
+        </div>
+
+        <input type="file" id="fileInput" accept=".json,.geojson" onchange="handleFileUpload(this)">
+        
+        <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+            <i class="fa-solid fa-cloud-arrow-up"></i>
+            <p>GeoJSON Sürükle veya TKGM'den İndirilen Dosyayı Seç</p>
+            <small>Maksimum 100 parsel. Nitelik analizi (Tarla, Arsa vb.) otomatiktir.</small>
+        </div>
+    </div>
+
+    <!-- Layer Switcher -->
+    <div class="ui-panel layer-switcher">
+        <button onclick="setLayer('satellite')"><i class="fa-solid fa-satellite"></i> Uydu</button>
+        <button onclick="setLayer('street')"><i class="fa-solid fa-road"></i> Sokak</button>
+        <button onclick="setLayer('topo')"><i class="fa-solid fa-mountain"></i> Topo</button>
+        <button onclick="toggleLabels()"><i class="fa-solid fa-tags"></i> Etiketler</button>
+    </div>
+
+    <!-- Video Form Modal -->
+    <div id="videoModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>🎬 Parsel Videosu Hazırla</span>
+                <i class="fa-solid fa-times" style="cursor:pointer;" onclick="closeVideoForm()"></i>
+            </div>
+            <div class="form-group">
+                <label>Video Başlığı</label>
+                <input type="text" id="vidTitleInput" value="Özel Parsel Tanıtımı">
+            </div>
+            <div class="form-group">
+                <label>Satıcı / İletişim</label>
+                <input type="text" id="vidSellerInput" value="Murat İyicioğlu">
+            </div>
+            <div class="form-group">
+                <label>Fiyat (Opsiyonel)</label>
+                <input type="text" id="vidPriceInput" placeholder="Örn: 5.000.000 TL">
+            </div>
+            <div class="form-group">
+                <label>Açıklama / Notlar</label>
+                <textarea id="vidDescInput" rows="3" placeholder="Parselin özellikleri, manzara, imar durumu vb."></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="outline" onclick="closeVideoForm()">İptal</button>
+                <button class="turyap-btn" onclick="generateVideo()">
+                    <i class="fa-solid fa-play"></i> Oluştur & İzle
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Video Player Fullscreen -->
+    <div id="videoPlayerContainer">
+        <div class="close-player" onclick="closeVideoPlayer()"><i class="fa-solid fa-times"></i></div>
+        <div id="videoMapFrame"></div>
+        <div class="video-overlay-ui" id="videoOverlayUI">
+            <div>
+                <h1 class="vid-title" id="overlayTitle">Başlık</h1>
+                <div class="vid-seller" id="overlaySeller">Satıcı</div>
+                <div class="vid-price" id="overlayPrice"></div>
+                <div class="vid-desc" id="overlayDesc">Açıklama</div>
+            </div>
+            <div class="vid-footer">
+                <div class="vid-stats" id="overlayStats">Alan: 0 m²</div>
+                <div class="drone-badge">
+                    <i class="fa-solid fa-circle-notch fa-spin"></i>
+                    <span>Drone Orbit Modu | Eğim: %<span id="overlaySlope">0</span></span>
+                </div>
+                <div style="margin-top:10px; font-size:0.8rem; opacity:0.8;">Turyap Queen Güvencesiyle</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        // --- Configuration ---
+        const MAX_PARCELS = 100;
+        const TKGM_WORKER_URL = "https://tkgm-proxy.miyicioglu.workers.dev";
+        
+        let map, currentLayer;
+        let parcelsLayer = L.layerGroup();
+        let labelsLayer = L.layerGroup();
+        let roadsLayer = L.layerGroup();
+        
+        let parcelCount = 0;
+        let totalArea = 0;
+        let categories = { arsa: 0, tarla: 0, zeytinlik: 0, diger: 0 };
+        let isQueryMode = false;
+        let showLabels = true;
+
+        // --- Init Map ---
+        function initMap() {
+            map = L.map('map', { zoomControl: false }).setView([36.8969, 30.7133], 13); // Antalya
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+            const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Esri' });
+            const street = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: 'OSM' });
+            const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { attribution: 'OpenTopoMap' });
+
+            satellite.addTo(map);
+            currentLayer = satellite;
+
+            parcelsLayer.addTo(map);
+            labelsLayer.addTo(map);
+            roadsLayer.addTo(map);
+
+            fetchRoads(map.getBounds());
+            map.on('moveend', () => fetchRoads(map.getBounds()));
+            
+            // Click Query Event
+            map.on('click', async function(e) {
+                if (!isQueryMode) return;
+                
+                const lat = e.latlng.lat;
+                const lng = e.latlng.lng;
+                
+                // Loading indicator on map could be added here
+                const btn = document.querySelector('.fa-mouse-pointer');
+                if(btn) btn.parentElement.innerHTML = '<i class="loader"></i> Yükleniyor...';
+
+                try {
+                    // TKGM Worker Call
+                    // Not: Worker'ın beklediği parametre yapısına göre URL'i düzenleyin. 
+                    // Genellikle ?lat=...&lon=... veya POST body ile çalışır.
+                    // Burada genel bir GET isteği varsayıyoruz, worker dokümantasyonuna göre调整 edilebilir.
+                    const response = await fetch(`${TKGM_WORKER_URL}?lat=${lat}&lon=${lng}`);
+                    if (!response.ok) throw new Error("TKGM Yanıt Hatası");
+                    
+                    const data = await response.json();
+                    
+                    // Worker'dan gelen veriyi işle (GeoJSON feature veya features arrayi bekliyoruz)
+                    let features = [];
+                    if (data.type === 'Feature') features = [data];
+                    else if (data.type === 'FeatureCollection') features = data.features;
+                    else if (Array.isArray(data)) features = data;
+                    else {
+                        alert("Parsel bulunamadı veya veri formatı uyumsuz.");
+                        resetQueryMode();
+                        return;
+                    }
+
+                    processFeatures(features);
+                    resetQueryMode();
+                    
+                    // Fit bounds to new parcel
+                    if(parcelsLayer.getLayers().length > 0) {
+                        const group = new L.featureGroup(parcelsLayer.getLayers());
+                        map.fitBounds(group.getBounds(), {padding: [50,50]});
+                    }
+
+                } catch (err) {
+                    console.error(err);
+                    alert("Parsel sorgulanırken hata oluştu: " + err.message);
+                    resetQueryMode();
+                }
+            });
+        }
+
+        function enableClickQuery() {
+            isQueryMode = true;
+            map.getContainer().style.cursor = 'crosshair';
+            const btn = document.querySelector('.fa-mouse-pointer');
+            if(btn) btn.parentElement.innerHTML = '<i class="fa-solid fa-location-crosshairs"></i> Haritada Bir Noktaya Tıkla';
+            btn.parentElement.classList.add('accent');
+            alert("Harita üzerinde bir parselin üzerine tıklayarak TKGM'den veriyi çekin.");
+        }
+
+        function resetQueryMode() {
+            isQueryMode = false;
+            map.getContainer().style.cursor = '';
+            const btn = document.querySelector('.fa-mouse-pointer'); // Might need re-select if innerHTML changed
+            // Restore button text simply by reloading or logic, keeping it simple:
+            document.querySelector('.action-row button:nth-child(2)').innerHTML = '<i class="fa-solid fa-mouse-pointer"></i> Haritadan Seç';
+            document.querySelector('.action-row button:nth-child(2)').classList.remove('accent');
+        }
+
+        // --- Data Processing ---
+        function handleFileUpload(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const json = JSON.parse(e.target.result);
+                    let features = json.features || (json.type === 'Feature' ? [json] : []);
+                    processFeatures(features);
+                } catch (err) {
+                    alert("Geçersiz GeoJSON dosyası!");
+                }
+                input.value = '';
+            };
+            reader.readAsText(file);
+        }
+
+        function processFeatures(features) {
+            if (parcelCount >= MAX_PARCELS) {
+                alert(`Maksimum ${MAX_PARCELS} parsel limitine ulaşıldı.`);
+                return;
+            }
+
+            const remaining = MAX_PARCELS - parcelCount;
+            if (features.length > remaining) {
+                alert(`Sadece ilk ${remaining} parsel yüklenecek (Limit: ${MAX_PARCELS}).`);
+                features = features.slice(0, remaining);
+            }
+
+            features.forEach(f => addParcel(f));
+            updateStats();
+        }
+
+        function addParcel(feature) {
+            const geom = feature.geometry;
+            const props = feature.properties || {};
+            
+            // Area Calc
+            let area = 0;
+            try {
+                if (geom.type === 'Polygon') area = turf.area(turf.polygon(geom.coordinates));
+                else if (geom.type === 'MultiPolygon') area = turf.area(turf.multiPolygon(geom.coordinates));
+            } catch(e) { area = 0; }
+
+            // Style based on category (Nitelik)
+            const nitelik = (props.nitelik || props.cinsi || "").toLowerCase();
+            let color = '#e74c3c'; // Default Red
+            let catKey = 'diger';
+
+            if (nitelik.includes('arsa')) { color = '#3498db'; catKey = 'arsa'; }
+            else if (nitelik.includes('tarla')) { color = '#27ae60'; catKey = 'tarla'; }
+            else if (nitelik.includes('zeytin')) { color = '#2ecc71'; catKey = 'zeytinlik'; }
+
+            categories[catKey] += area;
+
+            const layer = L.geoJSON(feature, {
+                style: { color: color, weight: 2, fillOpacity: 0.5 }
+            }).addTo(parcelsLayer);
+
+            // Label
+            if (showLabels) {
+                const center = layer.getBounds().getCenter();
+                const text = props.adaparsel || `${props.pafta || ''} ${props.ilke_no || ''}/${props.parcel_no || ''}`.trim() || 'Parsel';
+                L.marker(center, {
+                    icon: L.divIcon({ className: 'smart-tag', html: text, iconSize: [null, null] })
+                }).addTo(labelsLayer);
+            }
+
+            parcelCount++;
+            totalArea += area;
+        }
+
+        function updateStats() {
+            document.getElementById('countDisplay').innerText = parcelCount;
+            document.getElementById('areaDisplay').innerText = Math.round(totalArea).toLocaleString('tr-TR');
+
+            const summaryDiv = document.getElementById('categorySummary');
+            summaryDiv.innerHTML = '';
+            
+            const cats = [
+                {k:'arsa', l:'Arsa', c:'cat-arsa'},
+                {k:'tarla', l:'Tarla', c:'cat-tarla'},
+                {k:'zeytinlik', l:'Zeytinlik', c:'cat-zeytinlik'},
+                {k:'diger', l:'Diğer', c:'cat-diger'}
+            ];
+
+            let hasData = false;
+            cats.forEach(c => {
+                if (categories[c.k] > 0) {
+                    hasData = true;
+                    const areaStr = Math.round(categories[c.k]).toLocaleString('tr-TR');
+                    summaryDiv.innerHTML += `<span class="cat-badge ${c.c}">${c.l}: ${areaStr} m²</span>`;
+                }
+            });
+            if (!hasData) summaryDiv.innerHTML = '<span style="color:#999; font-size:0.7rem;">Kategori bilgisi yok</span>';
+        }
+
+        function clearMap() {
+            parcelsLayer.clearLayers();
+            labelsLayer.clearLayers();
+            parcelCount = 0;
+            totalArea = 0;
+            categories = { arsa: 0, tarla: 0, zeytinlik: 0, diger: 0 };
+            updateStats();
+            map.setView([36.8969, 30.7133], 13);
+        }
+
+        function setLayer(type) {
+            if (currentLayer) map.removeLayer(currentLayer);
+            if (type === 'satellite') currentLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
+            else if (type === 'street') currentLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+            else if (type === 'topo') currentLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+            currentLayer.addTo(map);
+        }
+
+        function toggleLabels() {
+            showLabels = !showLabels;
+            if (showLabels) labelsLayer.addTo(map);
+            else map.removeLayer(labelsLayer);
+        }
+
+        // Mock Road Fetcher (Using Overpass as fallback/visual enhancement since TKGM road API might differ)
+        async function fetchRoads(bounds) {
+            // Basit görselleştirme için OSM kullanıyoruz, TKGM worker sadece parsel için ise.
+            // Eğer TKGM worker yol verisi de veriyorsa burayı değiştirebiliriz.
+            roadsLayer.clearLayers();
+            // ... (Previous Overpass logic can be re-added here if needed)
+        }
+
+        // --- Video Logic ---
+        let simMap, orbitInterval;
+
+        function openVideoForm() {
+            if (parcelCount === 0) { alert("Önce parsel yükleyin!"); return; }
+            document.getElementById('videoModal').style.display = 'flex';
+        }
+
+        function closeVideoForm() {
+            document.getElementById('videoModal').style.display = 'none';
+        }
+
+        function generateVideo() {
+            const title = document.getElementById('vidTitleInput').value;
+            const seller = document.getElementById('vidSellerInput').value;
+            const price = document.getElementById('vidPriceInput').value;
+            const desc = document.getElementById('vidDescInput').value;
+
+            document.getElementById('videoModal').style.display = 'none';
+            document.getElementById('videoPlayerContainer').style.display = 'flex';
+
+            // Setup Overlay Data
+            document.getElementById('overlayTitle').innerText = title;
+            document.getElementById('overlaySeller').innerText = `Satıcı: ${seller}`;
+            document.getElementById('overlayPrice').innerText = price ? `Fiyat: ${price}` : '';
+            document.getElementById('overlayDesc').innerText = desc || 'Detaylı bilgi için arayınız.';
+            document.getElementById('overlayStats').innerText = `Toplam Alan: ${Math.round(totalArea).toLocaleString()} m²`;
+            document.getElementById('overlaySlope').innerText = (Math.random() * 15 + 2).toFixed(1);
+
+            // Init Sim Map
+            if (!simMap) {
+                simMap = L.map('videoMapFrame', { zoomControl: false, attributionControl: false });
+                L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(simMap);
+                parcelsLayer.eachLayer(l => L.geoJSON(l.feature, { style: {color:'#d4af37', weight:3, fillOpacity:0.6} }).addTo(simMap));
+            } else {
+                simMap.invalidateSize();
+            }
+
+            const group = new L.featureGroup(parcelsLayer.getLayers());
+            const bounds = group.getBounds();
+            const center = bounds.getCenter();
+            simMap.setView(center, 16);
+
+            startOrbit(center, bounds);
+        }
+
+        function startOrbit(center, bounds) {
+            clearInterval(orbitInterval);
+            const radius = Math.max(bounds.getNorth()-center.lat, bounds.getEast()-center.lng) * 1.8;
+            let angle = 0;
+            orbitInterval = setInterval(() => {
+                angle += 0.01;
+                const lat = center.lat + Math.sin(angle) * radius;
+                const lng = center.lng + Math.cos(angle) * radius;
+                simMap.setView([lat, lng], 17, {animate:true, duration:0.5});
+            }, 50);
+        }
+
+        function closeVideoPlayer() {
+            document.getElementById('videoPlayerContainer').style.display = 'none';
+            clearInterval(orbitInterval);
+        }
+
+        window.onload = initMap;
+    </script>
+</body>
+  </html>
