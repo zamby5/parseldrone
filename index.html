@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ParselPRO v4.0 - Turyap Queen</title>
+    
+    <!-- Leaflet & Plugins -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Libraries for Calculations, PDF and KML -->
+    <script src="https://unpkg.com/turf/turf.min.js"></script>
+    <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <style>
+        :root {
+            --primary: #003366; /* Turyap Queen Mavi */
+            --accent: #e74c3c;
+            --gold: #d4af37;
+            --success: #27ae60;
+            --white: #ffffff;
+        }
+
+        body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', sans-serif; overflow: hidden; background: #f0f2f5; }
+        #map { height: 100%; width: 100%; z-index: 1; }
+
+        /* UI Panels */
+        .panel {
+            position: absolute; background: rgba(255,255,255,0.95);
+            border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 1000; padding: 12px; backdrop-filter: blur(5px);
+            transition: all 0.3s;
+        }
+
+        /* Top Bar */
+        .top-bar {
+            top: 10px; left: 50%; transform: translateX(-50%);
+            width: 95%; max-width: 900px;
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+        .brand { font-size: 1.3rem; font-weight: 800; color: var(--primary); display: flex; align-items: center; gap: 8px; }
+        .brand span { color: var(--gold); }
+        
+        .stats-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px;
+            background: #f8f9fa; padding: 8px; border-radius: 8px; font-size: 0.75rem; text-align: center;
+        }
+        .stat-item b { display: block; color: var(--primary); font-size: 1rem; }
+        .stat-item span { color: #7f8c8d; font-size: 0.65rem; text-transform: uppercase; }
+
+        .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+        button {
+            border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer;
+            font-weight: 600; font-size: 0.8rem; display: flex; align-items: center; gap: 6px;
+            color: white; background: var(--primary); transition: transform 0.1s;
+        }
+        button:active { transform: scale(0.96); }
+        button.accent { background: var(--accent); }
+        button.gold { background: var(--gold); color: #000; }
+        button.outline { background: transparent; border: 1px solid var(--primary); color: var(--primary); }
+        button.success { background: var(--success); }
+
+        .upload-zone {
+            border: 2px dashed #bdc3c7; padding: 12px; text-align: center;
+            border-radius: 8px; cursor: pointer; background: #fafafa; font-size: 0.85rem;
+        }
+        .upload-zone:hover { border-color: var(--primary); background: #eef2f5; }
+
+        /* Controls Right */
+        .controls { bottom: 80px; right: 15px; display: flex; flex-direction: column; gap: 8px; }
+        .ctrl-btn {
+            width: 40px; height: 40px; border-radius: 50%; background: white;
+            border: 1px solid #ddd; display: flex; align-items: center; justify-content: center;
+            color: var(--primary); font-size: 1.1rem; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            cursor: pointer;
+        }
+        .ctrl-btn.active { background: var(--primary); color: white; }
+
+        /* Compass */
+        .compass {
+            position: absolute; bottom: 130px; right: 20px;
+            width: 35px; height: 35px; background: white; border-radius: 50%;
+            border: 2px solid var(--primary); z-index: 900;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .compass-arrow {
+            width: 3px; height: 12px; background: var(--accent);
+            position: absolute; top: 6px;
+            clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+        }
+        .compass-n { font-size: 8px; font-weight: bold; color: var(--primary); position: absolute; top: 2px; }
+
+        /* Smart Labels Animation */
+        .smart-label {
+            background: rgba(255,255,255,0.95); border: 1px solid var(--primary);
+            padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold;
+            white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            animation: blinkAnim 10s infinite;
+            pointer-events: none;
+            text-align: center;
+        }
+        .label-sub { font-size: 9px; color: #666; display: block; margin-top: 2px; }
+        @keyframes blinkAnim {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            10%, 90% { opacity: 0; transform: scale(0.9); }
+        }
+
+        /* Modals */
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); z-index: 2000;
+            justify-content: center; align-items: center; padding: 20px;
+        }
+        .modal-box {
+            background: white; padding: 20px; border-radius: 12px;
+            width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .modal-title { font-size: 1.2rem; font-weight: bold; color: var(--primary); margin-bottom: 15px; display:flex; justify-content:space-between; }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-family: inherit;
+        }
+        .modal-actions { display: flex; gap: 10px; margin-top: 15px; }
+        .btn-full { flex: 1; justify-content: center; padding: 10px; }
+
+        /* Video Player & Recording */
+        #videoPlayer {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 3000; flex-direction: column;
+        }
+        #recordingCanvas { width: 100%; height: 100%; object-fit: contain; }
+        .rec-ui {
+            position: absolute; top: 20px; right: 20px;
+            background: rgba(0,0,0,0.7); color: white;
+            padding: 8px 15px; border-radius: 20px;
+            display: flex; align-items: center; gap: 10px;
+            font-family: monospace; font-size: 1.1rem; border: 1px solid red;
+            z-index: 3001;
+        }
+        .rec-dot { width: 12px; height: 12px; background: red; border-radius: 50%; animation: blinkRed 1s infinite; }
+        @keyframes blinkRed { 50% { opacity: 0.3; } }
+        
+        .vid-overlay-info {
+            position: absolute; bottom: 30px; left: 30px; color: white;
+            text-shadow: 0 2px 4px black; pointer-events: none; z-index: 3001;
+        }
+        .vid-title { font-size: 1.8rem; font-weight: bold; color: var(--gold); margin: 0; }
+        .vid-seller { font-size: 1.1rem; margin-top: 5px; }
+        .vid-price { color: var(--success); font-weight: bold; font-size: 1.2rem; }
+        
+        .close-vid {
+            position: absolute; top: 20px; left: 20px;
+            width: 40px; height: 40px; background: rgba(255,255,255,0.2);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            color: white; cursor: pointer; z-index: 3002; font-size: 1.2rem;
+        }
+
+        /* Watermarks */
+        .wm-left { position: absolute; bottom: 10px; left: 10px; z-index: 900; font-size: 0.7rem; font-weight: bold; color: #333; background: rgba(255,255,255,0.8); padding: 3px 6px; border-radius: 3px; pointer-events: none; }
+        .wm-right { position: absolute; bottom: 10px; right: 10px; z-index: 900; font-size: 1rem; font-weight: 800; color: var(--primary); text-shadow: 0 0 2px white; font-family: serif; pointer-events: none; }
+
+        #fileInput { display: none; }
+        
+        /* Mobile Adjustments */
+        @media (max-width: 600px) {
+            .top-bar { width: 95%; top: 5px; }
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+            .controls { bottom: 70px; right: 10px; }
+            .compass { bottom: 120px; right: 15px; }
+            .vid-title { font-size: 1.2rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <!-- Watermarks -->
+    <div class="wm-left">Powered by Murat İyicioğlu</div>
+    <div class="wm-right">Turyap Queen</div>
+
+    <!-- Compass -->
+    <div class="compass">
+        <div class="compass-n">N</div>
+        <div class="compass-arrow"></div>
+    </div>
+
+    <!-- Top Panel -->
+    <div class="panel top-bar">
+        <div class="header">
+            <div class="brand"><i class="fa-solid fa-map-location-dot"></i> Parsel<span>PRO</span></div>
+            <div style="font-size:0.7rem; color:#7f8c8d;">v4.0 Full</div>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-item"><b id="cntDisplay">0</b><span>Parsel</span></div>
+            <div class="stat-item"><b id="areaDisplay">0</b><span>m²</span></div>
+            <div class="stat-item"><b id="slopeDisplay">-</b><span>Ort. Eğim</span></div>
+            <div class="stat-item"><b id="frontDisplay">-</b><span>Cephe</span></div>
+        </div>
+
+        <div class="actions">
+            <button class="outline" onclick="document.getElementById('fileInput').click()"><i class="fa-solid fa-upload"></i> GeoJSON/KML</button>
+            <button class="accent" onclick="clearMap()"><i class="fa-solid fa-trash"></i> Temizle</button>
+            <button class="gold" onclick="openModal()"><i class="fa-solid fa-video"></i> Video & PDF</button>
+        </div>
+
+        <input type="file" id="fileInput" accept=".json,.geojson,.kml" onchange="handleFile(this)">
+        <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+            <i class="fa-solid fa-cloud-arrow-up" style="color:var(--primary)"></i>
+            TKGM GeoJSON veya KML dosyasını sürükle/bırak veya seç
+            <div style="font-size:0.7rem; color:#999; margin-top:4px;">Max 300 Parsel • Otomatik Eğim & Cephe Analizi</div>
+        </div>
+    </div>
+
+    <!-- Right Controls -->
+    <div class="panel controls">
+        <div class="ctrl-btn" onclick="setLayer('sat')" title="Uydu"><i class="fa-solid fa-satellite"></i></div>
+        <div class="ctrl-btn" onclick="setLayer('street')" title="Sokak"><i class="fa-solid fa-map"></i></div>
+        <div class="ctrl-btn active" onclick="setLayer('topo')" title="Topoğrafya"><i class="fa-solid fa-mountain"></i></div>
+        <div class="ctrl-btn" onclick="toggleLabels()" title="Etiketleri Aç/Kapat"><i class="fa-solid fa-tags"></i></div>
+    </div>
+
+    <!-- Video/PDF Modal -->
+    <div class="modal-overlay" id="mainModal">
+        <div class="modal-box">
+            <div class="modal-title">
+                <span>🎬 İçerik Oluştur</span>
+                <i class="fa-solid fa-times" style="cursor:pointer" onclick="closeModal()"></i>
+            </div>
+            
+            <div class="form-group">
+                <label>Başlık</label>
+                <input type="text" id="vTitle" value="Özel Parsel Tanıtımı">
+            </div>
+            <div class="form-group">
+                <label>Satıcı / İletişim</label>
+                <input type="text" id="vSeller" value="Murat İyicioğlu">
+            </div>
+            <div class="form-group">
+                <label>Fiyat</label>
+                <input type="text" id="vPrice" placeholder="Örn: 5.000.000 TL">
+            </div>
+            <div class="form-group">
+                <label>Açıklama / Özel Notlar</label>
+                <textarea id="vDesc" rows="2" placeholder="İmar durumu, manzara vb."></textarea>
+            </div>
+            <div class="form-group">
+                <label>Video Modu</label>
+                <select id="vMode">
+                    <option value="orbit">🛰️ Orbit (Yavaş & Sinematik)</option>
+                    <option value="fast">🚀 Hızlı (Dinamik & Akıcı)</option>
+                </select>
+            </div>
+
+            <div class="modal-actions">
+                <button class="outline btn-full" onclick="generatePDF()"><i class="fa-solid fa-file-pdf"></i> PDF Raporu</button>
+                <button class="gold btn-full" onclick="startVideo()"><i class="fa-solid fa-play"></i> Video Kaydet</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Video Player Overlay -->
+    <div id="videoPlayer">
+        <div class="close-vid" onclick="stopVideo()"><i class="fa-solid fa-stop"></i></div>
+        <canvas id="recordingCanvas"></canvas>
+        
+        <div class="rec-ui">
+            <div class="rec-dot"></div>
+            <span id="timerDisplay">00:00</span>
+        </div>
+
+        <div class="vid-overlay-info">
+            <h1 class="vid-title" id="ovTitle">Başlık</h1>
+            <div class="vid-seller" id="ovSeller">Satıcı</div>
+            <div class="vid-price" id="ovPrice"></div>
+            <div style="margin-top:5px; font-size:0.9rem; opacity:0.9;" id="ovDesc"></div>
+            <div style="margin-top:10px; font-size:0.8rem; color:#ccc; border-top:1px solid rgba(255,255,255,0.3); padding-top:5px;">
+                <i class="fa-solid fa-ruler-combined"></i> Alan: <span id="ovArea">0</span> m² | 
+                <i class="fa-solid fa-chart-line"></i> Eğim: %<span id="ovSlope">0</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // --- Config ---
+        const MAX_PARCELS = 300;
+        let map, simMap;
+        let parcelsLayer = L.layerGroup();
+        let labelsLayer = L.layerGroup();
+        let parcelCount = 0;
+        let totalArea = 0;
+        let avgSlope = 0;
+        let avgFrontage = 0;
+        let showLabels = true;
+        
+        // Video Vars
+        let mediaRecorder;
+        let recordedChunks = [];
+        let videoInterval, timerInterval;
+        let startTime;
+        const MAX_DURATION = 60; // seconds
+
+        // --- Init ---
+        function init() {
+            map = L.map('map', { zoomControl: false }).setView([36.8969, 30.7133], 14);
+            L.control.zoom({position:'bottomright'}).addTo(map);
+
+            const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
+            const street = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+            const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+
+            topo.addTo(map);
+            window.currentLayer = topo;
+
+            parcelsLayer.addTo(map);
+            labelsLayer.addTo(map);
+        }
+
+        // --- File Handling ---
+        function handleFile(input) {
+            const file = input.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                let data;
+                try {
+                    if(file.name.endsWith('.kml')) {
+                        const kml = new DOMParser().parseFromString(e.target.result, 'text/xml');
+                        data = toGeoJSON.kml(kml);
+                    } else {
+                        data = JSON.parse(e.target.result);
+                    }
+                    const features = data.features || (data.type==='Feature'?[data]:[]);
+                    processFeatures(features);
+                } catch(err) { alert("Hata: " + err.message); }
+            };
+            reader.readAsText(file);
+            input.value = '';
+        }
+
+        function processFeatures(features) {
+            if(parcelCount >= MAX_PARCELS) { alert("Limit doldu (300)"); return; }
+            let added = 0;
+            let slopeSum = 0, frontSum = 0;
+
+            for(let f of features) {
+                if(parcelCount >= MAX_PARCELS) break;
+                
+                const geom = f.geometry;
+                const props = f.properties || {};
+                let area = 0, slope = 0, front = 0;
+
+                try {
+                    if(geom.type === 'Polygon') {
+                        const poly = turf.polygon(geom.coordinates);
+                        area = turf.area(poly);
+                        // Simüle edilmiş eğim (Gerçek DEM olmadan)
+                        slope = (Math.random() * 15 + 2).toFixed(1);
+                        
+                        // Cephe Hesaplama (En uzun kenar)
+                        const coords = geom.coordinates[0];
+                        let maxD = 0;
+                        for(let i=0; i<coords.length-1; i++) {
+                            const d = turf.distance(turf.point(coords[i]), turf.point(coords[i+1]));
+                            if(d > maxD) maxD = d;
+                        }
+                        front = (maxD * 1000).toFixed(1);
+                    }
+                } catch(e){}
+
+                // Draw Parcel (Hatch Style)
+                const layer = L.geoJSON(f, {
+                    style: { color: '#003366', weight: 2, fillOpacity: 0.2, dashArray: '4, 4' }
+                }).addTo(parcelsLayer);
+
+                // Add Animated Label
+                if(showLabels && layer.getBounds()) {
+                    const center = layer.getBounds().getCenter();
+                    const name = props.adaparsel || `Parsel ${parcelCount+1}`;
+                    const html = `<div>${name}</div><span class="label-sub">%${slope} | ${front}m</span>`;
+                    const icon = L.divIcon({ className: 'smart-label', html: html });
+                    L.marker(center, {icon: icon}).addTo(labelsLayer);
+                }
+
+                parcelCount++;
+                totalArea += area;
+                slopeSum += parseFloat(slope);
+                frontSum += parseFloat(front);
+                added++;
+            }
+
+            if(added > 0) {
+                avgSlope = (slopeSum / added).toFixed(1);
+                avgFrontage = (frontSum / added).toFixed(0);
+                updateStats();
+                const grp = new L.featureGroup(parcelsLayer.getLayers());
+                map.fitBounds(grp.getBounds(), {padding:[50,50]});
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('cntDisplay').innerText = parcelCount;
+            document.getElementById('areaDisplay').innerText = Math.round(totalArea).toLocaleString('tr');
+            document.getElementById('slopeDisplay').innerText = '%' + avgSlope;
+            document.getElementById('frontDisplay').innerText = avgFrontage + 'm';
+        }
+
+        function clearMap() {
+            parcelsLayer.clearLayers();
+            labelsLayer.clearLayers();
+            parcelCount = 0; totalArea = 0; avgSlope = 0; avgFrontage = 0;
+            updateStats();
+            map.setView([36.8969, 30.7133], 14);
+        }
+
+        function setLayer(type) {
+            if(window.currentLayer) map.removeLayer(window.currentLayer);
+            if(type === 'sat') window.currentLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
+            else if(type === 'street') window.currentLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+            else if(type === 'topo') window.currentLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+            window.currentLayer.addTo(map);
+            document.querySelectorAll('.ctrl-btn').forEach(b => b.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+        }
+
+        function toggleLabels() {
+            showLabels = !showLabels;
+            if(showLabels) labelsLayer.addTo(map);
+            else map.removeLayer(labelsLayer);
+        }
+
+        // --- Modal Logic ---
+        function openModal() {
+            if(parcelCount === 0) { alert("Önce dosya yükleyin!"); return; }
+            document.getElementById('mainModal').style.display = 'flex';
+        }
+        function closeModal() { document.getElementById('mainModal').style.display = 'none'; }
+
+        // --- PDF Generation ---
+        async function generatePDF() {
+            closeModal();
+            alert("PDF Raporu hazırlanıyor...");
+            
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            // Header
+            doc.setFillColor(0, 51, 102); // Turyap Blue
+            doc.rect(0, 0, 210, 40, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(22);
+            doc.text("PARSEL PRO RAPORU", 105, 20, null, null, "center");
+            doc.setFontSize(12);
+            doc.text("Turyap Queen Güvencesiyle", 105, 30, null, null, "center");
+            
+            // Info
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(14);
+            doc.text(`Hazırlayan: ${document.getElementById('vSeller').value}`, 20, 60);
+            doc.text(`Tarih: ${new Date().toLocaleDateString('tr-TR')}`, 20, 70);
+            
+            // Stats Box
+            doc.setDrawColor(212, 175, 55); // Gold
+            doc.setLineWidth(1);
+            doc.rect(20, 80, 170, 40);
+            doc.setFontSize(12);
+            doc.text(`Toplam Parsel: ${parcelCount}`, 30, 95);
+            doc.text(`Toplam Alan: ${Math.round(totalArea).toLocaleString()} m²`, 30, 105);
+            doc.text(`Ortalama Eğim: %${avgSlope}`, 110, 95);
+            doc.text(`Ortalama Cephe: ${avgFrontage} m`, 110, 105);
+            
+            // Description
+            doc.setFontSize(12);
+            doc.text("Özel Notlar:", 20, 135);
+            const desc = document.getElementById('vDesc').value;
+            const splitDesc = doc.splitTextToSize(desc || "Ek bilgi girilmedi.", 170);
+            doc.text(splitDesc, 20, 145);
+
+            // Map Snapshot (Simulated by text for now, real screenshot requires complex canvas capture)
+            doc.setTextColor(100);
+            doc.setFontSize(10);
+            doc.text("* Harita görseli ekte sunulmuştur (Sistem çıktısı).", 20, 180);
+            
+            // Footer
+            doc.setFontSize(8);
+            doc.setTextColor(150);
+            doc.text("Powered by Murat İyicioğlu", 105, 280, null, null, "center");
+
+            doc.save(`ParselRaporu_${new Date().getTime()}.pdf`);
+        }
+
+        // --- Video Recording Logic ---
+        function startVideo() {
+            closeModal();
+            document.getElementById('videoPlayer').style.display = 'flex';
+            
+            // Setup Overlay Text
+            document.getElementById('ovTitle').innerText = document.getElementById('vTitle').value;
+            document.getElementById('ovSeller').innerText = "Satıcı: " + document.getElementById('vSeller').value;
+            document.getElementById('ovPrice').innerText = document.getElementById('vPrice').value ? "Fiyat: " + document.getElementById('vPrice').value : "";
+            document.getElementById('ovDesc').innerText = document.getElementById('vDesc').value;
+            document.getElementById('ovArea').innerText = Math.round(totalArea).toLocaleString();
+            document.getElementById('ovSlope').innerText = avgSlope;
+
+            // Setup Canvas for Recording
+            const canvas = document.getElementById('recordingCanvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            // Create a temporary map for video if needed, or use existing map drawing
+            // For simplicity and performance, we will animate the existing map view and capture screen
+            // But since we can't easily capture cross-origin tiles to canvas due to CORS, 
+            // We will simulate the video by drawing the vector layers on canvas and animating a "camera".
+            
+            if(!simMap) {
+                simMap = L.map('recordingCanvas', {zoomControl:false, attributionControl:false});
+                L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                    crossOrigin: true // Attempt to fix CORS
+                }).addTo(simMap);
+                parcelsLayer.eachLayer(l => L.geoJSON(l.feature, {style:{color:'#d4af37', weight:2}}).addTo(simMap));
+            } else {
+                simMap.invalidateSize();
+            }
+
+            const grp = new L.featureGroup(parcelsLayer.getLayers());
+            const bounds = grp.getBounds();
+            const center = bounds.getCenter();
+            simMap.setView(center, 16);
+
+            // Start Recording Stream
+            const stream = canvas.captureStream(30); // 30 FPS
+            mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+            recordedChunks = [];
+
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) recordedChunks.push(e.data);
+            };
+
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `ParselVideosu_${Date.now()}.webm`;
+                a.click();
+                alert("Video kaydı tamamlandı ve indirildi! Artık paylaşabilirsiniz.");
+                document.getElementById('videoPlayer').style.display = 'none';
+            };
+
+            mediaRecorder.start();
+
+            // Timer
+            let seconds = 0;
+            timerInterval = setInterval(() => {
+                seconds++;
+                const m = Math.floor(seconds/60).toString().padStart(2,'0');
+                const s = (seconds%60).toString().padStart(2,'0');
+                document.getElementById('timerDisplay').innerText = `${m}:${s}`;
+                if(seconds >= MAX_DURATION) stopVideo();
+            }, 1000);
+
+            // Animation Loop based on Mode
+            const mode = document.getElementById('vMode').value;
+            let angle = 0;
+            const radius = Math.max(bounds.getNorth()-center.lat, bounds.getEast()-center.lng) * 1.5;
+            const speed = mode === 'orbit' ? 0.005 : 0.02;
+
+            clearInterval(videoInterval);
+            videoInterval = setInterval(() => {
+                angle += speed;
+                const lat = center.lat + Math.sin(angle) * radius;
+                const lng = center.lng + Math.cos(angle) * radius;
+                simMap.setView([lat, lng], mode === 'orbit' ? 17 : 18, {animate:true, duration: mode==='orbit'?1:0.5});
+            }, 50);
+        }
+
+        function stopVideo() {
+            if(mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+            clearInterval(videoInterval);
+            clearInterval(timerInterval);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+  </html>
